@@ -1,0 +1,44 @@
+<package>
+  <name>rosbag_rec_server</name>
+  <version>0.0.1</version>
+  <description>
+    This is a tool for recording from ROS topics which can be controlled over a ROS service.
+    It is intended to be high performance and avoids
+    deserialization and reserialization of the messages. 
+  </description>
+  <maintainer email="muhrix@gmail.com">Murilo F. M.</maintainer>
+  <license>BSD</license>
+
+  <author>Tim Field</author>
+  <author>Jeremy Leibs</author>
+  <author>James Bowman</author>
+  <author>Murilo F. M.</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>boost</build_depend>
+  <build_depend>cpp_common</build_depend>
+  <build_depend>python-imaging</build_depend>
+  <build_depend>rosbag_storage</build_depend>
+  <build_depend>rosconsole</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>roscpp_serialization</build_depend>
+  <build_depend>topic_tools</build_depend>
+  <build_depend>xmlrpcpp</build_depend>
+
+  <run_depend>boost</run_depend>
+  <run_depend>genmsg</run_depend>
+  <run_depend>genpy</run_depend>
+  <run_depend>python-rospkg</run_depend>
+  <run_depend>rosbag_storage</run_depend>
+  <run_depend>rosconsole</run_depend>
+  <run_depend>roscpp</run_depend>
+  <run_depend>roslib</run_depend>
+  <run_depend>rospy</run_depend>
+  <run_depend>topic_tools</run_depend>
+  <run_depend>xmlrpcpp</run_depend>
+
+  <export>
+    <rosdoc config="${prefix}/rosdoc.yaml"/>
+  </export>
+</package>
