@@ -33,7 +33,7 @@
 ********************************************************************/
 
 #include "rosbag_rec_server/recorder.h"
-#include "rosbag_rec_server/RecServer.h"
+#include "rosbag_rec_server/RosbagCmd.h"
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "rosbag_server");

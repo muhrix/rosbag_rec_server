@@ -436,8 +436,8 @@ int Recorder::stop() {
     return exit_code_;
 }
 
-bool Recorder::serviceCb(rosbag_rec_server::RecServer::Request& req,
-               rosbag_rec_server::RecServer::Response& res) {
+bool Recorder::serviceCb(rosbag_rec_server::RosbagCmd::Request& req,
+               rosbag_rec_server::RosbagCmd::Response& res) {
 
     if (req.command == 0 && recording_ == false) {
         // Parse the command-line options coming from service call

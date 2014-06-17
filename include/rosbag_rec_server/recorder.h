@@ -62,7 +62,7 @@
 #include "rosbag/stream.h"
 #include "rosbag/macros.h"
 
-#include "rosbag_rec_server/RecServer.h"
+#include "rosbag_rec_server/RosbagCmd.h"
 
 namespace rosbag {
 
@@ -131,8 +131,8 @@ public:
     int run();
     int stop();
 
-    bool serviceCb(rosbag_rec_server::RecServer::Request &req,
-                   rosbag_rec_server::RecServer::Response &res);
+    bool serviceCb(rosbag_rec_server::RosbagCmd::Request &req,
+                   rosbag_rec_server::RosbagCmd::Response &res);
 
 private:
     void printUsage();
