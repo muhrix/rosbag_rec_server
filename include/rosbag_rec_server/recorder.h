@@ -46,6 +46,7 @@
 #include <string>
 #include <vector>
 
+#include <boost/thread.hpp>
 #include <boost/thread/condition.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/regex.hpp>
@@ -59,6 +60,8 @@
 #include "rosbag/bag.h"
 #include "rosbag/stream.h"
 #include "rosbag/macros.h"
+
+#include "rosbag_rec_server/RecServer.h"
 
 namespace rosbag {
 
@@ -113,7 +116,9 @@ struct ROSBAG_DECL RecorderOptions
 class ROSBAG_DECL Recorder
 {
 public:
-    Recorder(RecorderOptions const& options);
+    //Recorder(RecorderOptions const& options);
+    Recorder();
+    ~Recorder();
 
     void doTrigger();
 
@@ -122,6 +127,10 @@ public:
     boost::shared_ptr<ros::Subscriber> subscribe(std::string const& topic);
 
     int run();
+    int stop();
+
+    bool serviceCb(rosbag_rec_server::RecServer::Request &req,
+                   rosbag_rec_server::RecServer::Response &res);
 
 private:
     void printUsage();
@@ -160,6 +169,7 @@ private:
     int                           num_subscribers_;      //!< used for book-keeping of our number of subscribers
 
     int                           exit_code_;            //!< eventual exit code
+    bool                          recording_;            //!< whether bag is being recorded
 
     boost::condition_variable_any queue_condition_;      //!< conditional variable for queue
     boost::mutex                  queue_mutex_;          //!< mutex for queue
@@ -179,6 +189,9 @@ private:
     boost::mutex                  check_disk_mutex_;
     ros::WallTime                 check_disk_next_;
     ros::WallTime                 warn_next_;
+
+    boost::thread                 record_thread_;
+    volatile bool                 halt_recording_;
 };
 
 } // namespace rosbag

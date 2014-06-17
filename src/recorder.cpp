@@ -54,6 +54,8 @@
 #include <boost/thread.hpp>
 #include <boost/thread/xtime.hpp>
 #include <boost/date_time/local_time/local_time.hpp>
+#include <boost/program_options.hpp>
+#include <boost/tokenizer.hpp>
 
 #include <ros/ros.h>
 #include <topic_tools/shape_shifter.h>
@@ -61,6 +63,8 @@
 #include "ros/network.h"
 #include "ros/xmlrpc_manager.h"
 #include "XmlRpc.h"
+
+#include "rosbag/exceptions.h"
 
 #define foreach BOOST_FOREACH
 
@@ -72,7 +76,214 @@ using std::vector;
 using boost::shared_ptr;
 using ros::Time;
 
+namespace po = boost::program_options;
+
 namespace rosbag {
+
+// http://stackoverflow.com/questions/18378798/use-boost-program-options-to-parse-an-arbitrary-string
+// copy_if was left out of the C++03 standard, so mimic the C++11
+// behaviour to support all predicate types.  The alternative is to
+// use remove_copy_if, but it only works for adaptable functors
+template <typename InputIterator,
+          typename OutputIterator, 
+          typename Predicate>
+OutputIterator 
+copy_if(InputIterator first,
+        InputIterator last,
+        OutputIterator result,
+        Predicate pred)
+{
+  while(first != last)
+  {
+    if(pred(*first))
+      *result++ = *first;
+    ++first;
+  }
+  return result;
+}
+
+//! Parse the command-line arguments for recorder options
+//rosbag::RecorderOptions parseOptions(int argc, char** argv) {
+rosbag::RecorderOptions parseOptions(const std::string& args) {
+    rosbag::RecorderOptions opts;
+
+    po::options_description desc("Allowed options");
+
+    desc.add_options()
+      ("help,h", "produce help message")
+      ("all,a", "record all topics")
+      ("regex,e", "match topics using regular expressions")
+      ("exclude,x", po::value<std::string>(), "exclude topics matching regular expressions")
+      ("quiet,q", "suppress console output")
+      ("output-prefix,o", po::value<std::string>(), "prepend PREFIX to beginning of bag name")
+      ("output-name,O", po::value<std::string>(), "record bagnamed NAME.bag")
+      ("buffsize,b", po::value<int>()->default_value(256), "Use an internal buffer of SIZE MB (Default: 256)")
+      ("chunksize", po::value<int>()->default_value(768), "Set chunk size of message data, in KB (Default: 768. Advanced)")
+      ("limit,l", po::value<int>()->default_value(0), "Only record NUM messages on each topic")
+      ("bz2,j", "use BZ2 compression")
+      ("split", po::value<int>()->implicit_value(0), "Split the bag file and continue recording when maximum size or maximum duration reached.")
+      ("topic", po::value< std::vector<std::string> >(), "topic to record")
+      ("size", po::value<int>(), "The maximum size of the bag to record in MB.")
+      ("duration", po::value<std::string>(), "Record a bag of maximum duration in seconds, unless 'm', or 'h' is appended.")
+      ("node", po::value<std::string>(), "Record all topics subscribed to by a specific node.");
+
+
+    po::positional_options_description p;
+    p.add("topic", -1);
+
+    po::variables_map vm;
+
+    try
+    {
+      typedef boost::escaped_list_separator<char> separator_type;
+      separator_type separator("\\",    // The escape characters
+                               "= ",    // The separator characters
+                               "\"\'"); // The quote characters
+
+      // Tokenise the intput
+      boost::tokenizer<separator_type> tokens(args, separator);
+
+      // Copy non-empty tokens from the tokenizer into the result
+      std::vector<std::string> args_vec;
+      rosbag::copy_if(tokens.begin(), tokens.end(), std::back_inserter(args_vec), 
+              !boost::bind(&std::string::empty, _1));
+          
+      //po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
+      po::store(po::command_line_parser(args_vec).options(desc).positional(p).run(), vm);
+    } catch (boost::program_options::invalid_command_line_syntax& e)
+    {
+      throw ros::Exception(e.what());
+    }  catch (boost::program_options::unknown_option& e)
+    {
+      throw ros::Exception(e.what());
+    }
+
+    if (vm.count("help")) {
+      std::cout << desc << std::endl;
+      exit(0);
+    }
+
+    if (vm.count("all"))
+      opts.record_all = true;
+    if (vm.count("regex"))
+      opts.regex = true;
+    if (vm.count("exclude"))
+    {
+      opts.do_exclude = true;
+      opts.exclude_regex = vm["exclude"].as<std::string>();
+    }
+    if (vm.count("quiet"))
+      opts.quiet = true;
+    if (vm.count("output-prefix"))
+    {
+      opts.prefix = vm["output-prefix"].as<std::string>();
+      opts.append_date = true;
+    }
+    if (vm.count("output-name"))
+    {
+      opts.prefix = vm["output-name"].as<std::string>();
+      opts.append_date = false;
+    }
+    if (vm.count("split"))
+    {
+      opts.split = true;
+
+      int S = vm["split"].as<int>();
+      if (S != 0)
+      {
+        ROS_WARN("Use of \"--split <MAX_SIZE>\" has been deprecated.  Please use --split --size <MAX_SIZE> or --split --duration <MAX_DURATION>");
+        if (S < 0)
+          throw ros::Exception("Split size must be 0 or positive");
+        opts.max_size = 1048576 * S;
+      }
+    }
+    if (vm.count("buffsize"))
+    {
+      int m = vm["buffsize"].as<int>();
+      if (m < 0)
+        throw ros::Exception("Buffer size must be 0 or positive");
+      opts.buffer_size = 1048576 * m;
+    }
+    if (vm.count("chunksize"))
+    {
+      int chnk_sz = vm["chunksize"].as<int>();
+      if (chnk_sz < 0)
+        throw ros::Exception("Chunk size must be 0 or positive");
+      opts.chunk_size = 1024 * chnk_sz;
+    }
+    if (vm.count("limit"))
+    {
+      opts.limit = vm["limit"].as<int>();
+    }
+    if (vm.count("bz2"))
+    {
+      opts.compression = rosbag::compression::BZ2;
+    }
+    if (vm.count("duration"))
+    {
+      std::string duration_str = vm["duration"].as<std::string>();
+
+      double duration;
+      double multiplier = 1.0;
+      std::string unit("");
+
+      std::istringstream iss(duration_str);
+      if ((iss >> duration).fail())
+        throw ros::Exception("Duration must start with a floating point number.");
+
+      if ( (!iss.eof() && ((iss >> unit).fail())) )
+      {
+        throw ros::Exception("Duration unit must be s, m, or h");
+      }
+      if (unit == std::string(""))
+        multiplier = 1.0;
+      else if (unit == std::string("s"))
+        multiplier = 1.0;
+      else if (unit == std::string("m"))
+        multiplier = 60.0;
+      else if (unit == std::string("h"))
+        multiplier = 3600.0;
+      else
+        throw ros::Exception("Duration unit must be s, m, or h");
+
+
+      opts.max_duration = ros::Duration(duration * multiplier);
+      if (opts.max_duration <= ros::Duration(0))
+        throw ros::Exception("Duration must be positive.");
+    }
+    if (vm.count("size"))
+    {
+      opts.max_size = vm["size"].as<int>() * 1048576;
+      if (opts.max_size <= 0)
+        throw ros::Exception("Split size must be 0 or positive");
+    }
+    if (vm.count("node"))
+    {
+      opts.node = vm["node"].as<std::string>();
+      std::cout << "Recording from: " << opts.node << std::endl;
+    }
+
+    // Every non-option argument is assumed to be a topic
+    if (vm.count("topic"))
+    {
+      std::vector<std::string> bags = vm["topic"].as< std::vector<std::string> >();
+      for (std::vector<std::string>::iterator i = bags.begin();
+           i != bags.end();
+           i++)
+        opts.topics.push_back(*i);
+    }
+
+
+    // check that argument combinations make sense
+    if(opts.exclude_regex.size() > 0 &&
+            !(opts.record_all || opts.regex)) {
+        fprintf(stderr, "Warning: Exclusion regex given, but no topics to subscribe to.\n"
+                "Adding implicit 'record all'.");
+        opts.record_all = true;
+    }
+
+    return opts;
+}
 
 // OutgoingMessage
 
@@ -115,14 +326,21 @@ RecorderOptions::RecorderOptions() :
 
 // Recorder
 
-Recorder::Recorder(RecorderOptions const& options) :
-    options_(options),
+//Recorder::Recorder(RecorderOptions const& options) :
+Recorder::Recorder() :
+    //options_(options),
     num_subscribers_(0),
     exit_code_(0),
+    recording_(false),
     queue_size_(0),
     split_count_(0),
-    writing_enabled_(true)
+    writing_enabled_(true),
+    halt_recording_(false)
 {
+}
+
+Recorder::~Recorder() {
+    delete queue_;
 }
 
 int Recorder::run() {
@@ -172,16 +390,16 @@ int Recorder::run() {
     ros::Subscriber trigger_sub;
 
     // Spin up a thread for writing to the file
-    boost::thread record_thread;
+    //boost::thread record_thread;
     if (options_.snapshot)
     {
-        record_thread = boost::thread(boost::bind(&Recorder::doRecordSnapshotter, this));
+        record_thread_ = boost::thread(boost::bind(&Recorder::doRecordSnapshotter, this));
 
         // Subscribe to the snapshot trigger
         trigger_sub = nh.subscribe<std_msgs::Empty>("snapshot_trigger", 100, boost::bind(&Recorder::snapshotTrigger, this, _1));
     }
     else
-        record_thread = boost::thread(boost::bind(&Recorder::doRecord, this));
+        record_thread_ = boost::thread(boost::bind(&Recorder::doRecord, this));
 
 
 
@@ -189,16 +407,57 @@ int Recorder::run() {
     if (options_.record_all || options_.regex || (options_.node != std::string("")))
         check_master_timer = nh.createTimer(ros::Duration(1.0), boost::bind(&Recorder::doCheckMaster, this, _1, boost::ref(nh)));
 
-    ros::MultiThreadedSpinner s(10);
-    ros::spin(s);
+    recording_ = true;
 
-    queue_condition_.notify_all();
+    //ros::MultiThreadedSpinner s(10);
+    //ros::spin(s);
+    //return stop();
+    return 0;
+}
 
-    record_thread.join();
-
-    delete queue_;
-
+int Recorder::stop() {
+    if (recording_) {
+        boost::unique_lock<boost::mutex> lock(queue_mutex_);
+        halt_recording_ = true;
+        lock.unlock();
+        queue_condition_.notify_all();
+        record_thread_.join();
+        //delete queue_;
+        recording_ = false;
+    }
     return exit_code_;
+}
+
+bool Recorder::serviceCb(rosbag_rec_server::RecServer::Request& req,
+               rosbag_rec_server::RecServer::Response& res) {
+
+    if (req.command == 0 && recording_ == false) {
+        // Parse the command-line options coming from service call
+        //rosbag::RecorderOptions opts;
+        try {
+            options_ = rosbag::parseOptions(req.argv);
+        }
+        catch (ros::Exception const& ex) {
+            ROS_ERROR("Error reading options: %s", ex.what());
+            res.return_code = 1;
+            return true;
+        }
+        catch(boost::regex_error const& ex) {
+            ROS_ERROR("Error reading options: %s\n", ex.what());
+            res.return_code = 1;
+            return true;
+        }
+        run();
+        res.return_code = 0;
+    }
+    else if (req.command == 1 && recording_ == true) {
+        res.return_code = stop();
+    }
+    else {
+        res.return_code = 1;
+    }
+
+    return true;
 }
 
 shared_ptr<ros::Subscriber> Recorder::subscribe(string const& topic) {
@@ -442,7 +701,7 @@ void Recorder::doRecord() {
 
         bool finished = false;
         while (queue_->empty()) {
-            if (!nh.ok()) {
+            if (!nh.ok() || halt_recording_ == true) {
                 lock.release()->unlock();
                 finished = true;
                 break;
