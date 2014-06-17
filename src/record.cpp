@@ -36,13 +36,13 @@
 #include "rosbag_rec_server/RecServer.h"
 
 int main(int argc, char** argv) {
-    ros::init(argc, argv, "record_server");
+    ros::init(argc, argv, "rosbag_server");
 
     ros::NodeHandle n("~");
 
     // Run the recorder
     rosbag::Recorder recorder;
-    ros::ServiceServer rec_srv = n.advertiseService("rosbag_server", &rosbag::Recorder::serviceCb, &recorder);
+    ros::ServiceServer rec_srv = n.advertiseService("rosbag_cmd", &rosbag::Recorder::serviceCb, &recorder);
 
     ros::MultiThreadedSpinner s(10);
     ros::spin(s);
