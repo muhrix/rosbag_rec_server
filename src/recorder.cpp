@@ -294,7 +294,7 @@ OutgoingMessage::OutgoingMessage(string const& _topic, topic_tools::ShapeShifter
 
 // OutgoingQueue
 
-OutgoingQueue::OutgoingQueue(string const& _filename, std::queue<OutgoingMessage>* _queue, Time _time) :
+OutgoingQueue::OutgoingQueue(string const& _filename, boost::shared_ptr<std::queue<OutgoingMessage> > _queue, Time _time) :
     filename(_filename), queue(_queue), time(_time)
 {
 }
@@ -340,7 +340,7 @@ Recorder::Recorder() :
 }
 
 Recorder::~Recorder() {
-    delete queue_;
+//    delete queue_;
 }
 
 int Recorder::run() {
@@ -368,7 +368,8 @@ int Recorder::run() {
         return 0;
 
     last_buffer_warn_ = Time();
-    queue_ = new std::queue<OutgoingMessage>;
+    //queue_ = new std::queue<OutgoingMessage>;
+    queue_ = boost::make_shared<std::queue<OutgoingMessage> >();
 
     // Subscribe to each topic
     if (!options_.regex) {
@@ -422,8 +423,15 @@ int Recorder::stop() {
         lock.unlock();
         queue_condition_.notify_all();
         record_thread_.join();
-        //delete queue_;
+
+        // restore the values set in constructor
+        num_subscribers_ = 0;
         recording_ = false;
+        queue_size_ = 0;
+        split_count_ = 0;
+        writing_enabled_ = true;
+        halt_recording_ = false;
+        //delete queue_;
     }
     return exit_code_;
 }
@@ -608,7 +616,9 @@ void Recorder::snapshotTrigger(std_msgs::Empty::ConstPtr trigger) {
     {
         boost::mutex::scoped_lock lock(queue_mutex_);
         queue_queue_.push(OutgoingQueue(target_filename_, queue_, Time::now()));
-        queue_      = new std::queue<OutgoingMessage>;
+        queue_.reset();
+        //queue_      = new std::queue<OutgoingMessage>;
+        queue_      = boost::make_shared<std::queue<OutgoingMessage> >();
         queue_size_ = 0;
     }
 

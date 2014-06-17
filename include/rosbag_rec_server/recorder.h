@@ -50,6 +50,7 @@
 #include <boost/thread/condition.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/regex.hpp>
+#include <boost/shared_ptr.hpp>
 
 #include <ros/ros.h>
 #include <ros/time.h>
@@ -79,10 +80,11 @@ public:
 class ROSBAG_DECL OutgoingQueue
 {
 public:
-    OutgoingQueue(std::string const& _filename, std::queue<OutgoingMessage>* _queue, ros::Time _time);
+    OutgoingQueue(std::string const& _filename, boost::shared_ptr<std::queue<OutgoingMessage> > _queue, ros::Time _time);
 
     std::string                  filename;
-    std::queue<OutgoingMessage>* queue;
+    //std::queue<OutgoingMessage>* queue;
+    boost::shared_ptr<std::queue<OutgoingMessage> > queue;
     ros::Time                    time;
 };
 
@@ -173,7 +175,8 @@ private:
 
     boost::condition_variable_any queue_condition_;      //!< conditional variable for queue
     boost::mutex                  queue_mutex_;          //!< mutex for queue
-    std::queue<OutgoingMessage>*  queue_;                //!< queue for storing
+    //std::queue<OutgoingMessage>*  queue_;                //!< queue for storing
+    boost::shared_ptr<std::queue<OutgoingMessage> >  queue_;                //!< queue for storing
     uint64_t                      queue_size_;           //!< queue size
     uint64_t                      max_queue_size_;       //!< max queue size
 
