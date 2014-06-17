@@ -1,0 +1,8 @@
+uint8 COMMAND_START = 0
+uint8 COMMAND_STOP = 1
+string argv
+uint8 command
+---
+uint8 RETURN_SUCCESS = 0
+uint8 RETURN_ERROR = 1
+uint8 return_code
