@@ -369,6 +369,7 @@ int Recorder::run() {
 
     last_buffer_warn_ = Time();
     //queue_ = new std::queue<OutgoingMessage>;
+    queue_.reset();
     queue_ = boost::make_shared<std::queue<OutgoingMessage> >();
 
     // Subscribe to each topic
@@ -418,14 +419,24 @@ int Recorder::run() {
 
 int Recorder::stop() {
     if (recording_) {
+        boost::condition_variable cond;
         boost::unique_lock<boost::mutex> lock(queue_mutex_);
         halt_recording_ = true;
-        lock.unlock();
+        // wait until all subscribers have shutdown (within doQueue()), i.e. num_subscribers_ = 0
+        while (num_subscribers_ > 0) {
+            if (!cond.timed_wait(lock, boost::posix_time::milliseconds(100))) {
+                if (num_subscribers_ > 0)
+                    ROS_INFO_STREAM("Waiting for unsubscription of " << num_subscribers_ << " topics");
+            }
+        }
+        lock.unlock();  
+
         queue_condition_.notify_all();
         record_thread_.join();
 
+
         // restore the values set in constructor
-        num_subscribers_ = 0;
+        //num_subscribers_ = 0;
         recording_ = false;
         queue_size_ = 0;
         split_count_ = 0;
@@ -540,7 +551,7 @@ void Recorder::doQueue(ros::MessageEvent<topic_tools::ShapeShifter const> msg_ev
         cout << "Received message on topic " << subscriber->getTopic() << endl;
 
     OutgoingMessage out(topic, msg_event.getMessage(), msg_event.getConnectionHeaderPtr(), rectime);
-    
+    bool shutdown = false;
     {
         boost::mutex::scoped_lock lock(queue_mutex_);
 
@@ -548,7 +559,7 @@ void Recorder::doQueue(ros::MessageEvent<topic_tools::ShapeShifter const> msg_ev
         queue_size_ += out.msg->size();
         
         // Check to see if buffer has been exceeded
-        while (options_.buffer_size > 0 && queue_size_ > options_.buffer_size) {
+        while (options_.buffer_size > 0 && queue_size_ > options_.buffer_size && halt_recording_ == false) {
             OutgoingMessage drop = queue_->front();
             queue_->pop();
             queue_size_ -= drop.msg->size();
@@ -561,6 +572,7 @@ void Recorder::doQueue(ros::MessageEvent<topic_tools::ShapeShifter const> msg_ev
                 }
             }
         }
+        shutdown = halt_recording_;
     }
   
     if (!options_.snapshot)
@@ -570,13 +582,20 @@ void Recorder::doQueue(ros::MessageEvent<topic_tools::ShapeShifter const> msg_ev
     if ((*count) > 0) {
         (*count)--;
         if ((*count) == 0) {
+            ROS_INFO_STREAM("Unsubscribing from " << subscriber->getTopic());
             subscriber->shutdown();
 
             num_subscribers_--;
 
-            if (num_subscribers_ == 0)
-                ros::shutdown();
+            //if (num_subscribers_ == 0)
+            //    ros::shutdown();
         }
+    }
+    // check if this callback must shutdown
+    else if (shutdown) {
+        ROS_INFO_STREAM("Unsubscribing from " << subscriber->getTopic());
+        subscriber->shutdown();
+        num_subscribers_--;
     }
 }
 
@@ -616,9 +635,9 @@ void Recorder::snapshotTrigger(std_msgs::Empty::ConstPtr trigger) {
     {
         boost::mutex::scoped_lock lock(queue_mutex_);
         queue_queue_.push(OutgoingQueue(target_filename_, queue_, Time::now()));
-        queue_.reset();
         //queue_      = new std::queue<OutgoingMessage>;
-        queue_      = boost::make_shared<std::queue<OutgoingMessage> >();
+        queue_.reset();
+        queue_ = boost::make_shared<std::queue<OutgoingMessage> >();
         queue_size_ = 0;
     }
 
