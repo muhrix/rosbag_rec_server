@@ -48,6 +48,7 @@
 #include <sstream>
 #include <string>
 
+#include <boost/algorithm/string.hpp>
 #include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/regex.hpp>
@@ -447,10 +448,29 @@ int Recorder::stop() {
     return exit_code_;
 }
 
+bool Recorder::isFilenameValid(const std::string &str) {
+    bool valid = false;
+    std::vector<std::string> tokens;
+    boost::split(tokens, str, boost::is_space());
+
+    if (tokens.size() > 2) {
+        boost::filesystem::path path(tokens[1]);
+        boost::filesystem::path parent_path(path.parent_path());
+
+        if (boost::filesystem::exists(parent_path) &&
+                boost::filesystem::is_directory(parent_path)) {
+            if (path.extension().compare(".bag") == 0) {
+                valid = true;
+            }
+        }
+    }
+    return valid;
+}
+
 bool Recorder::serviceCb(rosbag_rec_server::RosbagCmd::Request& req,
                rosbag_rec_server::RosbagCmd::Response& res) {
 
-    if (req.command == 0 && recording_ == false) {
+    if (isFilenameValid(req.argv) && req.command == 0 && recording_ == false) {
         // Parse the command-line options coming from service call
         //rosbag::RecorderOptions opts;
         try {
@@ -475,7 +495,6 @@ bool Recorder::serviceCb(rosbag_rec_server::RosbagCmd::Request& req,
     else {
         res.return_code = 1;
     }
-
     return true;
 }
 

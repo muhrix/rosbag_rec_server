@@ -131,6 +131,7 @@ public:
     int run();
     int stop();
 
+    bool isFilenameValid(const std::string &str);
     bool serviceCb(rosbag_rec_server::RosbagCmd::Request &req,
                    rosbag_rec_server::RosbagCmd::Response &res);
 
