@@ -86,9 +86,9 @@ namespace rosbag {
 // behaviour to support all predicate types.  The alternative is to
 // use remove_copy_if, but it only works for adaptable functors
 template <typename InputIterator,
-          typename OutputIterator, 
+          typename OutputIterator,
           typename Predicate>
-OutputIterator 
+OutputIterator
 copy_if(InputIterator first,
         InputIterator last,
         OutputIterator result,
@@ -146,9 +146,9 @@ rosbag::RecorderOptions parseOptions(const std::string& args) {
 
       // Copy non-empty tokens from the tokenizer into the result
       std::vector<std::string> args_vec;
-      rosbag::copy_if(tokens.begin(), tokens.end(), std::back_inserter(args_vec), 
+      rosbag::copy_if(tokens.begin(), tokens.end(), std::back_inserter(args_vec),
               !boost::bind(&std::string::empty, _1));
-          
+
       //po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
       po::store(po::command_line_parser(args_vec).options(desc).positional(p).run(), vm);
     } catch (boost::program_options::invalid_command_line_syntax& e)
@@ -375,8 +375,8 @@ int Recorder::run() {
 
     // Subscribe to each topic
     if (!options_.regex) {
-    	foreach(string const& topic, options_.topics)
-			subscribe(topic);
+        foreach(string const& topic, options_.topics)
+            subscribe(topic);
     }
 
     if (!ros::Time::waitForValid(ros::WallDuration(2.0)))
@@ -430,7 +430,7 @@ int Recorder::stop() {
                     ROS_INFO_STREAM("Waiting for unsubscription of " << num_subscribers_ << " topics");
             }
         }
-        lock.unlock();  
+        lock.unlock();
 
         queue_condition_.notify_all();
         record_thread_.join();
@@ -462,7 +462,19 @@ bool Recorder::isFilenameValid(const std::string &str) {
             if (path.extension().compare(".bag") == 0) {
                 valid = true;
             }
+            else {
+                ROS_ERROR_STREAM("Missing .bag extension in"
+                                 << path.string());
+            }
         }
+        else {
+            ROS_ERROR_STREAM("Parent path "
+                             << parent_path.string()
+                             << " does not exist or is not a directory");
+        }
+    }
+    else {
+        ROS_ERROR("Invalid number of arguments (> 2)");
     }
     return valid;
 }
@@ -490,16 +502,18 @@ bool Recorder::serviceCb(rosbag_rec_server::RosbagCmd::Request& req,
         res.return_code = 0;
     }
     else if (req.command == 1 && recording_ == true) {
+        ROS_INFO("STOP requested");
         res.return_code = stop();
     }
     else {
+        ROS_ERROR("Failed to parse received arguments");
         res.return_code = 1;
     }
     return true;
 }
 
 shared_ptr<ros::Subscriber> Recorder::subscribe(string const& topic) {
-	ROS_INFO("Subscribing to %s", topic.c_str());
+    ROS_INFO("Subscribing to %s", topic.c_str());
 
     ros::NodeHandle nh;
     shared_ptr<int> count(new int(options_.limit));
@@ -529,7 +543,7 @@ bool Recorder::shouldSubscribeToTopic(std::string const& topic, bool from_node) 
     if(options_.record_all || from_node) {
         return true;
     }
-    
+
     if (options_.regex) {
         // Treat the topics as regular expressions
         foreach(string const& regex_str, options_.topics) {
@@ -544,7 +558,7 @@ bool Recorder::shouldSubscribeToTopic(std::string const& topic, bool from_node) 
             if (t == topic)
                 return true;
     }
-    
+
     return false;
 }
 
@@ -565,7 +579,7 @@ std::string Recorder::timeToStr(T ros_t)
 void Recorder::doQueue(ros::MessageEvent<topic_tools::ShapeShifter const> msg_event, string const& topic, shared_ptr<ros::Subscriber> subscriber, shared_ptr<int> count) {
     //void Recorder::doQueue(topic_tools::ShapeShifter::ConstPtr msg, string const& topic, shared_ptr<ros::Subscriber> subscriber, shared_ptr<int> count) {
     Time rectime = Time::now();
-    
+
     if (options_.verbose)
         cout << "Received message on topic " << subscriber->getTopic() << endl;
 
@@ -576,7 +590,7 @@ void Recorder::doQueue(ros::MessageEvent<topic_tools::ShapeShifter const> msg_ev
 
         queue_->push(out);
         queue_size_ += out.msg->size();
-        
+
         // Check to see if buffer has been exceeded
         while (options_.buffer_size > 0 && queue_size_ > options_.buffer_size && halt_recording_ == false) {
             OutgoingMessage drop = queue_->front();
@@ -593,7 +607,7 @@ void Recorder::doQueue(ros::MessageEvent<topic_tools::ShapeShifter const> msg_ev
         }
         shutdown = halt_recording_;
     }
-  
+
     if (!options_.snapshot)
         queue_condition_.notify_all();
 
@@ -648,9 +662,9 @@ void Recorder::updateFilenames() {
 //! Callback to be invoked to actually do the recording
 void Recorder::snapshotTrigger(std_msgs::Empty::ConstPtr trigger) {
     updateFilenames();
-    
+
     ROS_INFO("Triggered snapshot recording with name %s.", target_filename_.c_str());
-    
+
     {
         boost::mutex::scoped_lock lock(queue_mutex_);
         queue_queue_.push(OutgoingQueue(target_filename_, queue_, Time::now()));
@@ -774,9 +788,9 @@ void Recorder::doRecord() {
         OutgoingMessage out = queue_->front();
         queue_->pop();
         queue_size_ -= out.msg->size();
-        
+
         lock.release()->unlock();
-        
+
         if (checkSize())
             break;
 
@@ -792,7 +806,7 @@ void Recorder::doRecord() {
 
 void Recorder::doRecordSnapshotter() {
     ros::NodeHandle nh;
-  
+
     while (nh.ok() || !queue_queue_.empty()) {
         boost::unique_lock<boost::mutex> lock(queue_mutex_);
         while (queue_queue_.empty()) {
@@ -800,15 +814,15 @@ void Recorder::doRecordSnapshotter() {
                 return;
             queue_condition_.wait(lock);
         }
-        
+
         OutgoingQueue out_queue = queue_queue_.front();
         queue_queue_.pop();
-        
+
         lock.release()->unlock();
-        
+
         string target_filename = out_queue.filename;
         string write_filename  = target_filename + string(".active");
-        
+
         try {
             bag_.open(write_filename, bagmode::Write);
         }
@@ -831,12 +845,12 @@ void Recorder::doRecordSnapshotter() {
 void Recorder::doCheckMaster(ros::TimerEvent const& e, ros::NodeHandle& node_handle) {
     ros::master::V_TopicInfo topics;
     if (ros::master::getTopics(topics)) {
-		foreach(ros::master::TopicInfo const& t, topics) {
-			if (shouldSubscribeToTopic(t.name))
-				subscribe(t.name);
-		}
+        foreach(ros::master::TopicInfo const& t, topics) {
+            if (shouldSubscribeToTopic(t.name))
+                subscribe(t.name);
+        }
     }
-    
+
     if (options_.node != std::string(""))
     {
 
@@ -861,7 +875,7 @@ void Recorder::doCheckMaster(ros::TimerEvent const& e, ros::NodeHandle& node_han
           XmlRpc::XmlRpcValue resp;
           req[0] = ros::this_node::getName();
           c.execute("getSubscriptions", req, resp);
-          
+
           if (!c.isFault() && resp.size() > 0 && static_cast<int>(resp[0]) == 1)
           {
             for(int i = 0; i < resp[2].size(); i++)
@@ -928,8 +942,8 @@ bool Recorder::checkDisk() {
     {
         info = boost::filesystem::space(p);
     }
-    catch (boost::filesystem::filesystem_error &e) 
-    { 
+    catch (boost::filesystem::filesystem_error &e)
+    {
         ROS_WARN("Failed to check filesystem stats [%s].", e.what());
         writing_enabled_ = false;
         return false;
